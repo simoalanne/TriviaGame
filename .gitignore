@@ -484,3 +484,9 @@ $RECYCLE.BIN/
 
 # www/ in this project serves frontend build which can be created locally or via CI/CD
 wwwroot/ 
+
+# ignore all but the root solution file
+/*.sln
+!/*.sln
+/*.slnx
+!/*.slnx

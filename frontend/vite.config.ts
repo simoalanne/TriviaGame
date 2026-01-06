@@ -6,7 +6,6 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
     build: {
-    // backend expects the built files to be in this directory and it is easier to change it here than in the backend config
-    outDir: path.resolve(__dirname, '../backend/wwwroot')
+    outDir: path.resolve(__dirname, '../server/wwwroot')
   }
 })

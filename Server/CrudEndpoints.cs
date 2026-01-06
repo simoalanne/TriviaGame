@@ -141,7 +141,7 @@ public static class CrudEndpoints
                 return Results.BadRequest(validation.Errors);
 
             var affected = await db.ExecuteAsync(
-                "UPDATE TriviaItems SET Data = @Data WHERE Data->>'Id' = @Id",
+                "UPDATE TriviaItems SET Data = (@Data::jsonb) WHERE Data->>'Id' = @Id",
                 new { Data = Utils.ToJson(item), item.Id }
             );
 
