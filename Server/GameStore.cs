@@ -8,6 +8,8 @@ public record PlayerConnectionInformation(string GameId, string PlayerId);
 public sealed class GameStore
 {
     private readonly ConcurrentDictionary<string, GameSession> _games = new();
+    private readonly ConcurrentDictionary<string, string>
+        _connectionIdToGameId = new();
 
     public PlayerConnectionInformation Create(string playerName)
     {
@@ -27,6 +29,13 @@ public sealed class GameStore
 
     public bool TryGet(string gameId, out GameSession game) =>
         _games.TryGetValue(gameId, out game!);
+
+    public void MapConnectionToGame(string connectionId, string gameId) =>
+        _connectionIdToGameId.TryAdd(connectionId, gameId);
+
+    public bool RemoveGameByConnectionId(string connectionId) =>
+        _connectionIdToGameId.TryRemove(connectionId, out var gameId) && _games.TryRemove(gameId, out _);
+
 
     public IReadOnlyCollection<string> GetIds() =>
         _games.Keys.ToList().AsReadOnly();

@@ -2,6 +2,7 @@
 using System.Text.Json;
 using Dapper;
 using Microsoft.AspNetCore.SignalR;
+using Shared;
 
 namespace TriviaGame;
 
@@ -79,7 +80,7 @@ public record OrderingQuestion(
     protected override string AnswerAsString() => CorrectOrder.ToString();
 }
 
-public record PlayerData(string Name, int Score = 0, bool IsHost = false)
+public record PlayerData(string Name, int Score = 0, bool IsHost = false, bool HasReadiedUp = false)
 {
     public string Id { get; init; } = Utils.NewGuid();
 }
@@ -96,6 +97,7 @@ public class GameSession
 {
     public TriviaItemDomain? CurrentTriviaItem;
     public readonly List<PlayerData> Players = [];
+    public List<string> CompletedTriviaItemIds = [];
     public int PlayerTurnIndex;
     public bool GameStarted;
 
@@ -108,8 +110,14 @@ public class GameSession
 
     public void DrawNewTriviaItem(IDbConnection db)
     {
-        var json = db.QuerySingleOrDefault<string>(
-            "SELECT Data FROM TriviaItems ORDER BY RANDOM() LIMIT 1"
+        var json = db.QuerySingleOrDefault<string>("""
+                                                   SELECT Data
+                                                   FROM TriviaItems
+                                                   WHERE NOT Data->>'Id' = ANY(@CompletedIds)
+                                                   ORDER BY RANDOM()
+                                                   LIMIT 1
+                                                   """,
+            new { CompletedIds = CompletedTriviaItemIds }
         );
 
         var triviaItemDto = json is null
@@ -129,8 +137,10 @@ public class GameSession
 public class GameStateResponse
 {
     public Dictionary<string, int> PlayerScores { get; set; } = new();
-    public string PlayerTurn { get; set; } = string.Empty;
+    public string CurrentPlayerName { get; set; } = string.Empty;
     public TriviaItemForClient? CurrentTriviaItem { get; set; }
+
+    public bool GameStarted => CurrentTriviaItem is not null;
 }
 
 public static class TriviaItemMapper
@@ -163,9 +173,9 @@ public static class TriviaItemMapper
                 ),
                 _ => throw new NotSupportedException($"Unsupported question type: {dto.QuestionType}")
             };
-        }).ToList();
+        }).Shuffle().ToList();
 
-        var content = new ItemContent<QuestionDomain>(questions);
+        var content = new ItemContent<QuestionDomain>(questions, dto.Content.CorrectAnswers);
         return new TriviaItemDomain(dto.Id, dto.Prompt, content, dto.QuestionType);
     }
 }
@@ -204,6 +214,7 @@ public sealed class GameHub(GameStore store) : Hub
             throw new HubException("Player not found in this game");
 
         await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
+        store.MapConnectionToGame(Context.ConnectionId, gameId);
 
         // Once player has joined, others should instantly be notified of the new player joining
         await Clients.Caller.SendAsync(
@@ -220,11 +231,19 @@ public sealed class GameHub(GameStore store) : Hub
         if (game.GameStarted)
             throw new HubException("Game has already started");
 
-        if (game.Players.FirstOrDefault(p => p.Id == playerId)?.IsHost != true)
-            throw new HubException("Only the host can start the game");
+        // mark the player as readied up
+        var index = game.Players.FindIndex(p => p.Id == playerId);
+        if (index is -1)
+            throw new HubException("Player not found in this game");
 
-        game.GameStarted = true;
-        game.DrawNewTriviaItem(db);
+        game.Players[index] = game.Players[index] with { HasReadiedUp = true };
+
+        // if all have readied up, start the game
+        if (game.Players.All(p => p.HasReadiedUp))
+        {
+            game.GameStarted = true;
+            game.DrawNewTriviaItem(db);
+        }
 
         await Clients.Group(gameId).SendAsync(
             "GameStateUpdated",
@@ -271,6 +290,7 @@ public sealed class GameHub(GameStore store) : Hub
         var allAnswered = game.CurrentTriviaItem.Content.Questions.All(q => q.PlayerAnswer is not null);
         if (allAnswered)
         {
+            game.CompletedTriviaItemIds.Add(game.CurrentTriviaItem.Id!);
             game.DrawNewTriviaItem(db);
         }
 
@@ -280,12 +300,23 @@ public sealed class GameHub(GameStore store) : Hub
         );
     }
 
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var disconnectedId = Context.ConnectionId;
+        // For now use a radical approach: if someone disconnects, end the game
+        // In the future the focus should be on connectionId to playerId mapping so features like reconnection,
+        // not allowing player to create multiple connections, etc. can be implemented.
+        // stable playerId should be the single source of truth for identifying what the player's state is on the server.
+        store.RemoveGameByConnectionId(disconnectedId);
+        await base.OnDisconnectedAsync(exception);
+    }
+
     private static GameStateResponse BuildGameState(GameSession game)
     {
         return new GameStateResponse
         {
             PlayerScores = game.Players.ToDictionary(p => p.Name, p => p.Score),
-            PlayerTurn = game.Players[game.PlayerTurnIndex].Name,
+            CurrentPlayerName = game.Players[game.PlayerTurnIndex].Name,
             CurrentTriviaItem = game.CurrentTriviaItem is null
                 ? null
                 : new TriviaItemForClient(
@@ -293,7 +324,8 @@ public sealed class GameHub(GameStore store) : Hub
                     Prompt: game.CurrentTriviaItem.Prompt,
                     QuestionType: game.CurrentTriviaItem.QuestionType,
                     Content: new ItemContent<QuestionToClient>(
-                        Questions: game.CurrentTriviaItem.Content.Questions.Select(q => q.ToClient()).ToList()
+                        Questions: game.CurrentTriviaItem.Content.Questions.Select(q => q.ToClient()).ToList(),
+                        CorrectAnswers: game.CurrentTriviaItem.Content.CorrectAnswers
                     ))
         };
     }

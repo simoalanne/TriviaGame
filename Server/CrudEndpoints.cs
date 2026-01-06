@@ -3,6 +3,7 @@ using System.Text.Json;
 using Dapper;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+using Shared;
 
 namespace TriviaGame;
 
