@@ -23,11 +23,14 @@ export function QuestionsGrid({
       options = ["True", "False"];
       break;
     case "Ordering":
-      options = triviaItem.content.questions
-        .map((q, index) =>
-          q.playerAnswer ? undefined : (index + 1).toString()
-        )
-        .filter((num): num is string => num !== undefined);
+      const answered = new Set(
+        triviaItem.content.questions.map((q) => q.correctAnswer).filter(Boolean)
+      );
+      // Options consist of range from 1 to number of questions, excluding already answered ones
+      options = Array.from(
+        { length: triviaItem.content.questions.length },
+        (_, i) => `${i + 1}`
+      ).filter((o) => !answered.has(o));
       break;
   }
 
