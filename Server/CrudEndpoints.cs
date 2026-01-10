@@ -18,8 +18,9 @@ public static class CrudEndpoints
         bool? IncludeFillInTheBlank,
         bool? IncludeOrdering);
 
-    private static string GetWhereClause(QuestionTypeFilter filter)
+    private static string BuildWhereClause(QuestionTypeFilter filter, string? tags, out DynamicParameters parameters)
     {
+        parameters = new DynamicParameters();
         var allTypes = new List<(bool? Include, int EnumValue)>
         {
             (filter.IncludeMultipleChoice, (int)QuestionType.MultipleChoice),
@@ -31,13 +32,25 @@ public static class CrudEndpoints
         var includeTypes = allTypes.Where(t => t.Include == true).Select(t => t.EnumValue.ToString()).ToList();
         var excludeTypes = allTypes.Where(t => t.Include == false).Select(t => t.EnumValue.ToString()).ToList();
 
-        var conditions = new List<string>();
+        var includeCondition = includeTypes.Count > 0
+            ? $"(Data->>'QuestionType')::int IN ({string.Join(", ", includeTypes)})"
+            : null;
 
-        if (includeTypes.Count > 0)
-            conditions.Add($"(Data->>'QuestionType')::int IN ({string.Join(", ", includeTypes)})");
+        var excludeCondition = excludeTypes.Count > 0
+            ? $"(Data->>'QuestionType')::int NOT IN ({string.Join(", ", excludeTypes)})"
+            : null;
 
-        if (excludeTypes.Count > 0)
-            conditions.Add($"(Data->>'QuestionType')::int NOT IN ({string.Join(", ", excludeTypes)})");
+        var tagsArr = tags?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries) ?? [];
+        if (tagsArr.Length > 0) parameters.Add("Tags", tagsArr);
+
+        var tagCondition = tagsArr.Length > 0
+            // ?| operator would be nice, but it is case-sensitive so it's not suitable here
+            ? "exists (select 1 from jsonb_array_elements_text(data->'Tags') t(tag) where lower(t.tag) = any(@Tags))"
+            : null;
+
+        var conditions = new[] { includeCondition, excludeCondition, tagCondition }
+            .Where(c => c is not null)
+            .ToList();
 
         return conditions.Count > 0
             ? "WHERE " + string.Join(" AND ", conditions)
@@ -58,6 +71,7 @@ public static class CrudEndpoints
                 bool? includeOrdering,
                 int? page,
                 int? pageSize,
+                string? tags,
                 IDbConnection db
             ) =>
             {
@@ -67,11 +81,13 @@ public static class CrudEndpoints
                     includeFillInTheBlank,
                     includeOrdering
                 );
-                
+
                 page ??= 1;
                 pageSize ??= 20;
 
-                var whereClause = GetWhereClause(filter);
+                var whereClause = BuildWhereClause(filter, tags, out var parameters);
+                parameters.Add("PageSize", pageSize);
+                parameters.Add("Offset", (page - 1) * pageSize);
                 var sql = $"""
                                SELECT COALESCE(jsonb_agg(Data)::text, '[]')
                                FROM (
@@ -82,11 +98,12 @@ public static class CrudEndpoints
                                    LIMIT @PageSize OFFSET @Offset
                                )
                            """;
-                var json = await db.QuerySingleAsync<string>(sql, new { PageSize = pageSize, Offset = (page - 1) * pageSize });
+                var json = await db.QuerySingleAsync<string>(sql,
+                    parameters
+                );
                 var items = JsonSerializer.Deserialize<List<TriviaItemDto>>(json);
                 return Results.Ok(items);
             });
-
 
 
         // GET single trivia item by id

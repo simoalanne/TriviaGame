@@ -66,7 +66,7 @@ public class ApiService(HttpClient client, JsonSerializerOptions jsonOptions)
         var response = await client.DeleteAsync($"http://localhost:5164/trivia/{id}");
         return response.IsSuccessStatusCode
             ? $"Question with ID {id} deleted successfully."
-            : $"Failed to delete question with ID {id}. It may not exist."; 
+            : $"Failed to delete question with ID {id}. It may not exist.";
     }
 
 
@@ -83,6 +83,14 @@ public class ApiService(HttpClient client, JsonSerializerOptions jsonOptions)
             {
                 Description = "Trivia items contain a main prompt with multiple related sub-questions",
                 Structure = "One prompt groups related questions that share a theme",
+                OtherFields = """
+                              Tags and Difficulty are mandatory metadata.
+                              Tags should go from general to specific (e.g., ["Sports", "Football", "Premier League"])
+                              Difficulty levels: Easy, Medium, Hard indicate overall challenge.
+                              Challenge level should correlate with two factors:
+                              - How niche is the overall topic?
+                              - How tricky are the questions themselves?
+                              """,
                 Philosophy = "Questions should test knowledge cohesively around a single topic"
             },
 

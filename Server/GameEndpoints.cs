@@ -126,7 +126,7 @@ public class GameSession
 
         if (triviaItemDto is null)
         {
-            throw new InvalidOperationException("No trivia items available in the database.");
+            throw new HubException("No more trivia items available to draw.");
         }
 
         var triviaItemDomain = triviaItemDto.Map();
@@ -175,8 +175,21 @@ public static class TriviaItemMapper
             };
         }).Shuffle().ToList();
 
-        var content = new ItemContent<QuestionDomain>(questions, dto.Content.CorrectAnswers);
-        return new TriviaItemDomain(dto.Id, dto.Prompt, content, dto.QuestionType);
+        var content = new ItemContent<QuestionDomain>
+        {
+            Questions = questions,
+            CorrectAnswers = dto.Content.CorrectAnswers
+        };
+
+        return new TriviaItemDomain
+        {
+            Id = dto.Id,
+            Prompt = dto.Prompt,
+            Tags = dto.Tags,
+            Difficulty = dto.Difficulty,
+            QuestionType = dto.QuestionType,
+            Content = content
+        };
     }
 }
 
@@ -319,14 +332,19 @@ public sealed class GameHub(GameStore store) : Hub
             CurrentPlayerName = game.Players[game.PlayerTurnIndex].Name,
             CurrentTriviaItem = game.CurrentTriviaItem is null
                 ? null
-                : new TriviaItemForClient(
-                    Id: game.CurrentTriviaItem.Id,
-                    Prompt: game.CurrentTriviaItem.Prompt,
-                    QuestionType: game.CurrentTriviaItem.QuestionType,
-                    Content: new ItemContent<QuestionToClient>(
-                        Questions: game.CurrentTriviaItem.Content.Questions.Select(q => q.ToClient()).ToList(),
-                        CorrectAnswers: game.CurrentTriviaItem.Content.CorrectAnswers
-                    ))
+                : new TriviaItemForClient
+                {
+                    Id = game.CurrentTriviaItem.Id,
+                    Prompt = game.CurrentTriviaItem.Prompt,
+                    Tags = game.CurrentTriviaItem.Tags,
+                    Difficulty = game.CurrentTriviaItem.Difficulty,
+                    QuestionType = game.CurrentTriviaItem.QuestionType,
+                    Content = new ItemContent<QuestionToClient>
+                    {
+                        Questions = game.CurrentTriviaItem.Content.Questions.Select(q => q.ToClient()).ToList(),
+                        CorrectAnswers = game.CurrentTriviaItem.Content.CorrectAnswers
+                    }
+                }
         };
     }
 }

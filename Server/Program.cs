@@ -35,9 +35,6 @@ builder.Services.AddScoped<IDbConnection>(_ => new Npgsql.NpgsqlConnection(conne
 builder.Services.AddSingleton<IValidator<TriviaItem<QuestionDto>>, TriviaQuestionValidator>();
 builder.Services.AddSingleton<GameStore>();
 
-// Create tables if they don't exist
-await DbSetup.EnsureTablesExistAsync(connectionString!);
-
 var app = builder.Build();
 
 app.UseWebSockets();

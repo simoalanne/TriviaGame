@@ -23,6 +23,7 @@ export type QuestionType =
 export interface TriviaItemForClient {
   id?: string;
   prompt: string;
+  tags: string[];
   content: ItemContent<QuestionToClient>;
   questionType: QuestionType;
 }

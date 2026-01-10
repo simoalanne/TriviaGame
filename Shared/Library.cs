@@ -12,26 +12,38 @@ public enum QuestionType
     Ordering
 }
 
-public record TriviaItem<TQuestion>(
-    string? Id,
-    string Prompt,
-    ItemContent<TQuestion> Content,
-    QuestionType QuestionType
-);
+public enum DifficultyLevel
+{
+    Easy,
+    Medium,
+    Hard
+}
 
-public record ItemContent<TQuestion>(
-    List<TQuestion> Questions,
-    List<string>? CorrectAnswers = null
-);
+public record TriviaItem<TQuestion>
+{
+    public required string Prompt { get; init; }
+    public required List<string> Tags { get; init; }
+    public required ItemContent<TQuestion> Content { get; init; }
+    public required DifficultyLevel Difficulty { get; init; }
+    public required QuestionType QuestionType { get; init; }
+    public string? Id { get; init; }
+}
 
-public record QuestionDto(
-    string QuestionText,
-    string? Explanation = null,
-    int? OrderingAnswer = null,
-    bool? TrueOrFalseAnswer = null,
-    List<string>? FillInTheBlankAnswer = null,
-    string? MultipleChoiceAnswer = null
-);
+public record ItemContent<TQuestion>
+{
+    public required List<TQuestion> Questions { get; init; }
+    public List<string>? CorrectAnswers { get; init; }
+}
+
+public record QuestionDto
+{
+    public required string QuestionText { get; init; }
+    public string? Explanation { get; init; }
+    public int? OrderingAnswer { get; init; }
+    public bool? TrueOrFalseAnswer { get; init; }
+    public List<string>? FillInTheBlankAnswer { get; init; }
+    public string? MultipleChoiceAnswer { get; init; }
+};
 
 public class TriviaQuestionValidator : AbstractValidator<TriviaItemDto>
 {
@@ -52,7 +64,13 @@ public class TriviaQuestionValidator : AbstractValidator<TriviaItemDto>
     private const int MaxAcceptableAnswers = 4;
     private const int MinMultipleChoiceAnswers = 2;
     private const int MaxMultipleChoiceAnswers = 4;
-    
+
+    // Tags constraints
+    private const int MinTagLength = 2;
+    private const int MaxTagLength = 30;
+    private const int MinTags = 1;
+    private const int MaxTags = 4;
+
     // this could use reflection in the future.
     public static string GetMinAndMaxGuide()
     {
@@ -62,6 +80,7 @@ public class TriviaQuestionValidator : AbstractValidator<TriviaItemDto>
             $"- Questions per Item: {MinQuestionsPerItem}-{MaxQuestionsPerItem}\n" +
             $"- Question Text: {MinQuestionLength}-{MaxQuestionLength} characters\n" +
             $"- Explanation (optional): {MinExplanationLength}-{MaxExplanationLength} characters\n" +
+            $"- Tags per Item: {MinTags}-{MaxTags}, each tag {MinTagLength}-{MaxTagLength} characters\n" +
             $"- Textual Answers: {MinTextualAnswerLength}-{MaxTextualAnswerLength} characters\n" +
             $"- Multiple Choice Answers: {MinMultipleChoiceAnswers}-{MaxMultipleChoiceAnswers}, must be unique\n" +
             $"- Fill in the Blank Acceptable Answers: {MinAcceptableAnswers}-{MaxAcceptableAnswers}, must be unique\n" +
@@ -73,6 +92,18 @@ public class TriviaQuestionValidator : AbstractValidator<TriviaItemDto>
         RuleFor(x => x.Prompt)
             .NotEmpty()
             .Length(MinPromptLength, MaxPromptLength);
+
+        RuleFor(x => x.Tags)
+            .NotNull()
+            .NotEmpty()
+            .Must(tags => tags?.Count is >= MinTags and <= MaxTags)
+            .WithMessage($"Number of tags must be between {MinTags} and {MaxTags}.")
+            .Must(IsUniqueList)
+            .WithMessage("Tags must be unique.");
+        RuleForEach(x => x.Tags)
+            .NotEmpty()
+            .Length(MinTagLength, MaxTagLength);
+
 
         RuleFor(x => x.Content.Questions)
             .NotEmpty()
@@ -144,4 +175,3 @@ public class TriviaQuestionValidator : AbstractValidator<TriviaItemDto>
         });
     }
 }
-
